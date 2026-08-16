@@ -93,19 +93,33 @@ Fonte muito frequente de 🔴 real, e frequentemente ignorada em reviews focados
 
 | Sinal | Gravidade | Problema | Correção |
 |---|---|---|---|
-| Acesso a navegação dentro de `foreach` | 🔴 | N+1: uma query por item | `Include()` ou projeção com `Select()` |
+| Query ao banco (`Where`, `First`, `LoadAsync`) dentro de `foreach` | 🔴 | N+1 de verdade: uma ida ao banco por item | Uma query só, com `Include()` ou projeção; ou carregar as chaves e fazer `Where(x => ids.Contains(x.Id))` |
+| Navegação lida sem `Include` nem projeção | 🔴 | **Depende de proxies, e os dois casos são ruins.** Com `UseLazyLoadingProxies()`: N+1. Sem proxies: devolve `null` na referência e coleção vazia, ou pior, o *relationship fixup* do change tracker preenche **parcialmente** com o que já está rastreado, o que dá dado errado sem erro nenhum e muda conforme a ordem das queries anteriores | `Include()` explícito ou projeção. **Em review, verifique primeiro se `UseLazyLoadingProxies()` está registrado**, porque isso decide qual dos dois defeitos você está olhando |
 | `ToList()` antes de `Where()` | 🔴 | Traz a tabela e filtra em memória | Filtrar no `IQueryable` |
-| Leitura sem `AsNoTracking()` | 🟠 | Custo de change tracking desnecessário, e risco de mutação acidental | `AsNoTracking()` em consultas de leitura |
+| Query que materializa **entidades** num caminho só de leitura, sem `AsNoTracking()` | 🟠 | Change tracking pago sem uso, e mutação acidental fica persistível pelo próximo `SaveChanges` (note: `AsNoTracking` não impede mutar o objeto, só impede persistir) | `AsNoTracking()`, ou `AsNoTrackingWithIdentityResolution()` se o grafo repete referências ao mesmo pai |
+| `AsNoTracking()` numa query que já projeta para DTO | 🟢 | Projeção para tipo que não é entidade **já não é rastreada**: a chamada não faz nada | Remover como ruído. Não é defeito, e não vale achado |
 | Projetar a entidade inteira para devolver 3 campos | 🟠 | Tráfego e memória desperdiçados | `Select()` para DTO |
 | `SaveChangesAsync` dentro de loop | 🔴 | Uma transação por item; lento e sem atomicidade | Um `SaveChangesAsync` no fim |
 | Paginação com `Skip/Take` sem `OrderBy` | 🟠 | Ordem não determinística, itens repetidos ou perdidos entre páginas | `OrderBy` estável antes |
 | SQL concatenado com interpolação em `FromSqlRaw` | 🔴 | SQL injection | `FromSql` com interpolação parametrizada, ou parâmetros explícitos |
 | `Include` em cascata profunda | 🟠 | Explosão cartesiana de linhas | `AsSplitQuery()` ou projeção |
-| Update lendo a entidade só para alterar um campo | 🟡 | Round trip extra | `ExecuteUpdateAsync` |
-| Delete carregando entidades | 🟡 | Round trip extra | `ExecuteDeleteAsync` |
+| Update lendo a entidade só para alterar um campo | 🟡 | Round trip extra | `ExecuteUpdateAsync`, **com as ressalvas abaixo** |
+| Delete carregando entidades | 🟡 | Round trip extra | `ExecuteDeleteAsync`, **com as ressalvas abaixo** |
 | `DbContext` usado concorrentemente | 🔴 | Não é thread safe | Um contexto por unidade de trabalho |
 | Migration ausente para mudança de modelo | 🟠 | Divergência entre modelo e banco | Gerar migration |
 | Lazy loading habilitado | 🟠 | N+1 silencioso e difícil de rastrear | Desabilitar, usar `Include` explícito |
+
+### Ressalvas de `ExecuteUpdateAsync` e `ExecuteDeleteAsync`
+
+São ótimos para operação em lote, e péssimos como substituto genérico de `SaveChanges`. Nunca recomende sem dizer isto, porque cada item é uma forma de perder garantia que o autor achava que tinha:
+
+- **Executam na hora, fora do change tracker.** Não é unidade de trabalho: se você já tinha alterações pendentes, elas não vão junto, e entidades já rastreadas ficam **desatualizadas** em memória.
+- **Não verificam concorrência otimista.** Um `RowVersion` no modelo é simplesmente ignorado, então a atualização sobrescreve mudança de outro usuário sem erro.
+- **Não disparam nada que esteja pendurado no `SaveChanges`:** interceptors, eventos de domínio, auditoria, `SaveChangesAsync` sobrescrito.
+- **Não aplicam comportamento em cascata do modelo** nem soft delete implementado por interceptor ou query filter na escrita.
+- **Não entram na mesma transação** de um `SaveChanges` vizinho, a não ser que você abra a transação explicitamente.
+
+Regra prática para o review: em operação de lote sem invariante e sem auditoria, recomende. Em fluxo de domínio com agregado, concorrência ou evento, não recomende.
 
 ## HttpClient e resiliência
 

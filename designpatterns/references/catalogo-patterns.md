@@ -305,7 +305,8 @@ Meio-termo que funciona: **Repository para escrita** (consistência do agregado)
 ### Specification
 
 - **Gatilho:** repositório com muitos métodos `GetByXAndY`, ou a mesma condição de negócio duplicada em SQL e em memória.
-- **Ganho real:** dar **nome de negócio** à regra e usá-la nos dois mundos, no banco via `Expression<Func<T,bool>>` e em memória via `IsSatisfiedBy`, sem risco de divergirem.
+- **Ganho real:** dar **nome de negócio** à regra e usá-la nos dois mundos, no banco via `Expression<Func<T,bool>>` e em memória via `IsSatisfiedBy`, a partir de uma definição só.
+- **Ressalva importante, que não pode ser omitida:** uma definição só **não garante** o mesmo resultado nos dois mundos. `ToExpression().Compile()` roda LINQ-to-Objects com semântica de C#; a mesma expressão traduzida roda com semântica do banco. Divergem em comparação de string (o banco decide por collation, e `SP` pode casar com `sp`), em lógica de três valores com `null`, em precisão e arredondamento de `decimal`, e em comparação sensível a cultura. Se a regra vale dinheiro ou autorização, cubra as duas execuções com teste de integração.
 - **Quando NÃO:** filtro simples usado uma vez. `Where(c => !c.IsBlocked)` é mais legível que três classes.
 
 ### CQRS
