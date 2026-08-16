@@ -1,0 +1,21 @@
+# Nada de build aqui: o repositorio e' markdown mais dois scripts de instalacao.
+# Estas entradas existem so' para o caso de alguem rodar ferramenta dentro do clone.
+
+# Windows / macOS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Editores
+.vs/
+.vscode/
+.idea/
+*.swp
+*~
+
+# Sobras de execucao de avaliacao das skills
+*-workspace/
+trigger-sandbox/
+__pycache__/
+*.pyc
